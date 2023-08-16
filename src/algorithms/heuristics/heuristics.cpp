@@ -20,8 +20,8 @@ std::vector<std::vector<Eval>> get_jobs_vehicles_evals(const Input& input) {
   // evals[j][v] evaluates fetching job j **and** associated delivery
   // in an empty route from vehicle at rank v.
   std::vector<std::vector<Eval>> evals(input.jobs.size(),
-                                       std::vector<Eval>(
-                                         input.vehicles.size()));
+                                       std::vector<Eval>(input.vehicles.size(),
+                                                         MAX_EVAL));
   for (std::size_t j = 0; j < input.jobs.size(); ++j) {
     Index j_index = input.jobs[j].index();
     bool is_pickup = (input.jobs[j].type == JOB_TYPE::PICKUP);
@@ -35,8 +35,14 @@ std::vector<std::vector<Eval>> get_jobs_vehicles_evals(const Input& input) {
 
     for (std::size_t v = 0; v < input.vehicles.size(); ++v) {
       const auto& vehicle = input.vehicles[v];
-      Eval current_eval =
-        is_pickup ? vehicle.eval(j_index, last_job_index) : Eval();
+
+      if (!input.vehicle_ok_with_job(v, j)) {
+        continue;
+      }
+
+      auto& current_eval = evals[j][v];
+      current_eval = is_pickup ? vehicle.eval(j_index, last_job_index) : Eval();
+
       if (vehicle.has_start()) {
         current_eval += vehicle.eval(vehicle.start.value().index(), j_index);
       }
@@ -44,7 +50,7 @@ std::vector<std::vector<Eval>> get_jobs_vehicles_evals(const Input& input) {
         current_eval +=
           vehicle.eval(last_job_index, vehicle.end.value().index());
       }
-      evals[j][v] = current_eval;
+
       if (is_pickup) {
         // Assign same eval to delivery.
         evals[j + 1][v] = current_eval;
@@ -493,9 +499,9 @@ T dynamic_vehicle_choice(const Input& input,
     // (resp. second min cost) of picking the job in an empty route
     // for any remaining vehicle.
     std::vector<Cost> jobs_min_costs(input.jobs.size(),
-                                     std::numeric_limits<Cost>::max());
+                                     input.get_cost_upper_bound());
     std::vector<Cost> jobs_second_min_costs(input.jobs.size(),
-                                            std::numeric_limits<Cost>::max());
+                                            input.get_cost_upper_bound());
     for (const auto job_rank : unassigned) {
       for (const auto v_rank : vehicles_ranks) {
         if (evals[job_rank][v_rank].cost <= jobs_min_costs[job_rank]) {
